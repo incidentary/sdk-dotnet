@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <PackageId>Incidentary.Sdk</PackageId>
+    <Description>Official Incidentary SDK for .NET — causal observability for distributed systems. Zero-overhead instrumentation with local pre-arm anomaly detection.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Incidentary.Sdk.Tests" Key="00240000048000001401000006020000002400005253413100080000010001001dffbca9fc8c5fce861e29a2a73e632f17b65d1e4483e0a52be3739012c983e943d976f0d4ef24a7bc80d387dbf8677e1b971265b5b6ebb0e3f23bf2cf3bec750b125c6d1ffb4ae1b2fc0d7dc28c0015eab7f7ad14d467643c91f505713798fa067f52cb3dc54a6295e4fbd37cd055c351c4952ea4cdffdf713e887a43788b3e3ea139e9c99b17ef1a6a99e7e115e30321b064d2add7935c7a37fb6cbd00732b23a14256d4e985bd52030b58739ce93d9fb55465a09891f3dcd204069ec08bd36a1c477d368f40c9c04eaa8d08660d25d06f5c1e931260801d36e009e9fdf006bf77789925897f59c00b823e2d71b6e184fba1d9e150d817e8ff616cdc54bd95" />
+    <InternalsVisibleTo Include="Incidentary.Sdk.Benchmarks" Key="00240000048000001401000006020000002400005253413100080000010001001dffbca9fc8c5fce861e29a2a73e632f17b65d1e4483e0a52be3739012c983e943d976f0d4ef24a7bc80d387dbf8677e1b971265b5b6ebb0e3f23bf2cf3bec750b125c6d1ffb4ae1b2fc0d7dc28c0015eab7f7ad14d467643c91f505713798fa067f52cb3dc54a6295e4fbd37cd055c351c4952ea4cdffdf713e887a43788b3e3ea139e9c99b17ef1a6a99e7e115e30321b064d2add7935c7a37fb6cbd00732b23a14256d4e985bd52030b58739ce93d9fb55465a09891f3dcd204069ec08bd36a1c477d368f40c9c04eaa8d08660d25d06f5c1e931260801d36e009e9fdf006bf77789925897f59c00b823e2d71b6e184fba1d9e150d817e8ff616cdc54bd95" />
+  </ItemGroup>
+
+</Project>

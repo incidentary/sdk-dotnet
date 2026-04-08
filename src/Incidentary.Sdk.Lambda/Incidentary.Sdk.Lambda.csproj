@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <PackageId>Incidentary.Sdk.Lambda</PackageId>
+    <Description>AWS Lambda integration for Incidentary SDK. Automatic handler wrapping with flush-before-freeze semantics.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Incidentary.Sdk/Incidentary.Sdk.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Amazon.Lambda.Core" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <PackageId>Incidentary.Sdk.Integrations.Grpc</PackageId>
+    <Description>gRPC client and server interceptors for Incidentary SDK. Automatic grpc_in/grpc_out event recording.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Incidentary.Sdk/Incidentary.Sdk.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Grpc.Core.Api" />
+  </ItemGroup>
+
+</Project>

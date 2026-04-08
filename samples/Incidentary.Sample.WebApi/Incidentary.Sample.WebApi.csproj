@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <TargetFrameworks></TargetFrameworks>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Incidentary.Sdk/Incidentary.Sdk.csproj" />
+    <ProjectReference Include="../../src/Incidentary.Sdk.AspNetCore/Incidentary.Sdk.AspNetCore.csproj" />
+    <ProjectReference Include="../../src/Incidentary.Sdk.Extensions.DependencyInjection/Incidentary.Sdk.Extensions.DependencyInjection.csproj" />
+    <ProjectReference Include="../../src/Incidentary.Sdk.Extensions.Http/Incidentary.Sdk.Extensions.Http.csproj" />
+  </ItemGroup>
+</Project>

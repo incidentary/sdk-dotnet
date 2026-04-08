@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <PackageId>Incidentary.Sdk.Extensions.Http</PackageId>
+    <Description>IHttpClientFactory integration for Incidentary SDK. Provides DelegatingHandler for automatic outbound HTTP instrumentation.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Incidentary.Sdk/Incidentary.Sdk.csproj" />
+    <ProjectReference Include="../Incidentary.Sdk.Extensions.DependencyInjection/Incidentary.Sdk.Extensions.DependencyInjection.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Http" />
+  </ItemGroup>
+
+</Project>

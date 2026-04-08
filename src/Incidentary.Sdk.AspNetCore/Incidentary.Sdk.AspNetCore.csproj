@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <PackageId>Incidentary.Sdk.AspNetCore</PackageId>
+    <Description>ASP.NET Core middleware for Incidentary SDK. Automatic HTTP_IN event recording with trace context propagation.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Incidentary.Sdk/Incidentary.Sdk.csproj" />
+    <ProjectReference Include="../Incidentary.Sdk.Extensions.DependencyInjection/Incidentary.Sdk.Extensions.DependencyInjection.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+</Project>

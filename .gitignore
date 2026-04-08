@@ -1,0 +1,50 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstats
+.vs/
+*.nupkg
+*.snupkg
+nupkgs/
+
+## MSBuild
+*.binlog
+
+## Benchmark output
+BenchmarkDotNet.Artifacts/
+
+## IDE — JetBrains Rider / ReSharper
+.idea/
+_ReSharper*/
+*.DotSettings.user
+
+## IDE — Visual Studio Code
+.vscode/
+
+## IDE — misc
+*.swp
+*~
+
+## OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+## Test results
+TestResults/
+coverage/
+*.trx
+*.coveragexml
+
+## Static analysis
+*.sarif
+
+## Build output
+artifacts/
+publish/
+
+## Tasks / working notes
+tasks/
