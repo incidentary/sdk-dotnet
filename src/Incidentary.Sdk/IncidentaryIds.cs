@@ -4,20 +4,27 @@ using System.Security.Cryptography;
 namespace Incidentary.Sdk;
 
 /// <summary>
-/// Canonical UUIDv7 id generator for the Incidentary SDK.
+/// Identifier generators for the Incidentary .NET SDK.
 /// </summary>
 /// <remarks>
-/// UUIDv7 (RFC 9562 §5.7) encodes a Unix-millis timestamp in the most
-/// significant 48 bits, so ids generated minutes apart sort
-/// lexicographically in the order they were created. That property
-/// materially improves B-tree locality on hot ingest paths.
-/// Binary-compatible with v4 on the wire, so anywhere the SDK
-/// previously emitted <see cref="Guid.NewGuid"/> can switch to this
-/// transparently.
+/// Exposes two methods with a deliberate split:
+/// <list type="bullet">
+///   <item><see cref="NewId"/> — UUIDv7 for DB-backed identifiers
+///   (trace IDs, CE IDs, anywhere sort-key locality matters). The
+///   48-bit millisecond prefix improves B-tree locality on hot ingest
+///   paths.</item>
+///   <item><see cref="NewRandomToken"/> — UUIDv4 for externally visible,
+///   privacy-sensitive tokens where the timestamp embedded in v7 would
+///   leak creation time across a trust boundary.</item>
+/// </list>
+/// Both share the 128-bit UUID layout, so either form slots into a
+/// <c>uuid</c> column transparently.
 ///
-/// On .NET 9+ this delegates to the native <c>Guid.CreateVersion7()</c>.
-/// On .NET 8 it packs the layout manually using
-/// <see cref="RandomNumberGenerator"/>.
+/// On .NET 9+ the v7 path delegates to the native
+/// <c>Guid.CreateVersion7()</c>. On .NET 8 it packs the layout manually
+/// using <see cref="RandomNumberGenerator"/>. The v4 path always uses
+/// <see cref="Guid.NewGuid"/>, which has been CSPRNG-backed on every
+/// supported runtime.
 /// </remarks>
 public static class IncidentaryIds
 {
@@ -65,5 +72,20 @@ public static class IncidentaryIds
         }
         return new string(chars);
 #endif
+    }
+
+    /// <summary>
+    /// Return a canonical UUIDv4 string — 122 bits of CSPRNG output
+    /// with no embedded timestamp.
+    /// </summary>
+    /// <remarks>
+    /// Use this for externally visible tokens (deploy dedup keys
+    /// attached to visible URLs, share-URL slugs, CSRF nonces) where
+    /// the 48-bit millisecond prefix that <see cref="NewId"/> carries
+    /// would leak the token's creation time across a trust boundary.
+    /// </remarks>
+    public static string NewRandomToken()
+    {
+        return Guid.NewGuid().ToString("D", CultureInfo.InvariantCulture);
     }
 }
