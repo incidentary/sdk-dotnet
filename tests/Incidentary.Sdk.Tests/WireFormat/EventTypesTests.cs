@@ -7,10 +7,16 @@ namespace Incidentary.Sdk.Tests.WireFormat;
 public sealed class EventTypesTests
 {
     [Fact]
-    public void HttpIn_IsCorrect() => EventTypes.HttpIn.Should().Be("http_in");
+    public void HttpServer_IsCorrect() => EventTypes.HttpServer.Should().Be("http_server");
 
     [Fact]
-    public void HttpOut_IsCorrect() => EventTypes.HttpOut.Should().Be("http_out");
+    public void HttpClient_IsCorrect() => EventTypes.HttpClient.Should().Be("http_client");
+
+    [Fact]
+    public void HttpIn_AliasMatchesHttpServer() => EventTypes.HttpIn.Should().Be(EventTypes.HttpServer);
+
+    [Fact]
+    public void HttpOut_AliasMatchesHttpClient() => EventTypes.HttpOut.Should().Be(EventTypes.HttpClient);
 
     [Fact]
     public void GrpcIn_IsCorrect() => EventTypes.GrpcIn.Should().Be("grpc_in");

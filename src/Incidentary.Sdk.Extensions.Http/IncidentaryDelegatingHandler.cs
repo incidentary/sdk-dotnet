@@ -81,7 +81,7 @@ public sealed class IncidentaryDelegatingHandler : DelegatingHandler
             var options = new RecordRequestOptions
             {
                 Kind = CeKind.HttpOut,
-                EventType = EventTypes.HttpOut,
+                EventType = EventTypes.HttpClient,
                 DurationNs = durationNs,
                 TraceId = traceId,
                 ParentCeId = current?.CeId,

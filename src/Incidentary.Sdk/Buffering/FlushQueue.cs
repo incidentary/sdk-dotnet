@@ -39,39 +39,48 @@ internal sealed class FlushQueue : IAsyncDisposable
     /// Flushes a list of events to the transport, splitting into batches
     /// of <see cref="_maxBatchSize"/> and retrying failed batches with
     /// exponential backoff.
+    /// Returns the last non-null <c>RequestedCaptureMode</c> from any successful batch, or null.
     /// </summary>
-    public async Task FlushAsync(
+    public async Task<string?> FlushAsync(
         IReadOnlyList<CausalEvent> events,
         string captureMode,
         string? incidentId = null,
         CancellationToken ct = default)
     {
         if (events.Count == 0)
-            return;
+            return null;
 
         try
         {
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _cts.Token);
             var token = linkedCts.Token;
 
+            string? requestedCaptureMode = null;
+
             for (var offset = 0; offset < events.Count; offset += _maxBatchSize)
             {
                 if (token.IsCancellationRequested)
-                    return;
+                    return requestedCaptureMode;
 
                 var batchSize = Math.Min(_maxBatchSize, events.Count - offset);
                 var batch = events.Skip(offset).Take(batchSize).ToList();
 
-                await SendBatchWithRetryAsync(batch, captureMode, incidentId, token);
+                var result = await SendBatchWithRetryAsync(batch, captureMode, incidentId, token);
+
+                if (result?.RequestedCaptureMode is not null)
+                    requestedCaptureMode = result.RequestedCaptureMode;
             }
+
+            return requestedCaptureMode;
         }
         catch (Exception ex)
         {
             _onError?.Invoke(ex);
+            return null;
         }
     }
 
-    private async Task SendBatchWithRetryAsync(
+    private async Task<FlushResult?> SendBatchWithRetryAsync(
         List<CausalEvent> batch,
         string captureMode,
         string? incidentId,
@@ -84,21 +93,21 @@ internal sealed class FlushQueue : IAsyncDisposable
         for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
             if (ct.IsCancellationRequested)
-                return;
+                return null;
 
             try
             {
-                var success = await _transport.UploadBatchAsync(batch, captureMode, incidentId, ct);
+                var result = await _transport.UploadBatchAsync(batch, captureMode, incidentId, ct);
 
-                if (success)
+                if (result.Success)
                 {
                     Interlocked.Add(ref _totalFlushed, batch.Count);
-                    return;
+                    return result;
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                return;
+                return null;
             }
             catch (Exception ex)
             {
@@ -118,7 +127,7 @@ internal sealed class FlushQueue : IAsyncDisposable
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
-                    return;
+                    return null;
                 }
             }
         }
@@ -127,6 +136,7 @@ internal sealed class FlushQueue : IAsyncDisposable
         Interlocked.Add(ref _droppedCount, batch.Count);
         _onError?.Invoke(new InvalidOperationException(
             $"Batch of {batch.Count} events dropped: all retries exhausted."));
+        return null;
     }
 
     public ValueTask DisposeAsync()

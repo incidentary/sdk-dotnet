@@ -42,7 +42,7 @@ public sealed class IncidentaryClientAdvancedTests
             .Returns(callInfo =>
             {
                 _capturedBatches!.Add(callInfo.Arg<IReadOnlyList<CausalEvent>>());
-                return true;
+                return new FlushResult { Success = true };
             });
 
         return new IncidentaryClient(BaseOptions(configure), _transport);
@@ -102,7 +102,7 @@ public sealed class IncidentaryClientAdvancedTests
         await client.FlushToBackendAsync();
 
         var batch = _capturedBatches!.Single();
-        batch.Single().ParentCeId.Should().Be("parent-ce-123");
+        batch.Single().ParentId.Should().Be("parent-ce-123");
     }
 
     [Fact]
@@ -129,7 +129,7 @@ public sealed class IncidentaryClientAdvancedTests
         await client.FlushToBackendAsync();
 
         var batch = _capturedBatches!.Single();
-        batch.Single().EventAttrs.Should().ContainKey("custom_key")
+        batch.Single().Attributes.Should().ContainKey("custom_key")
             .WhoseValue.Should().Be("custom_value");
     }
 
@@ -142,7 +142,7 @@ public sealed class IncidentaryClientAdvancedTests
         await client.FlushToBackendAsync();
 
         var batch = _capturedBatches!.Single();
-        batch.Single().EventType.Should().Be("webhook_in");
+        batch.Single().Type.Should().Be("webhook_in");
     }
 
     [Fact]
@@ -156,7 +156,7 @@ public sealed class IncidentaryClientAdvancedTests
         var batch = _capturedBatches!.Single();
         var ce = batch.Single();
         ce.Kind.Should().Be(CeKind.HttpOut);
-        ce.EventType.Should().Be(EventTypes.HttpOut);
+        ce.Type.Should().Be(EventTypes.HttpOut);
     }
 
     [Fact]
@@ -180,7 +180,7 @@ public sealed class IncidentaryClientAdvancedTests
         await client.FlushToBackendAsync();
 
         var batch = _capturedBatches!.Single();
-        Guid.TryParse(batch.Single().CeId, out _).Should().BeTrue();
+        Guid.TryParse(batch.Single().Id, out _).Should().BeTrue();
     }
 
     [Fact]
@@ -195,7 +195,7 @@ public sealed class IncidentaryClientAdvancedTests
         var afterNs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000L;
 
         var batch = _capturedBatches!.Single();
-        batch.Single().WallTsNs.Should().BeInRange(beforeNs, afterNs);
+        batch.Single().OccurredAt.Should().BeInRange(beforeNs, afterNs);
     }
 
     [Fact]
@@ -272,7 +272,7 @@ public sealed class IncidentaryClientAdvancedTests
         await client.FlushToBackendAsync();
 
         var batch = _capturedBatches!.Single();
-        batch.Single().EventAttrs.Should().ContainKey("topic")
+        batch.Single().Attributes.Should().ContainKey("topic")
             .WhoseValue.Should().Be("orders.created");
     }
 
@@ -289,7 +289,7 @@ public sealed class IncidentaryClientAdvancedTests
         await client.FlushToBackendAsync();
 
         var batch = _capturedBatches!.Single();
-        var attrs = batch.Single().EventAttrs;
+        var attrs = batch.Single().Attributes;
         attrs.Should().ContainKey("topic").WhoseValue.Should().Be("orders");
         attrs.Should().ContainKey("db_name").WhoseValue.Should().Be("postgres");
     }
@@ -308,7 +308,7 @@ public sealed class IncidentaryClientAdvancedTests
 
         var batch = _capturedBatches!.Single();
         var ce = batch.Single();
-        ce.Status.Should().Be(500);
+        ce.StatusCode.Should().Be(500);
         ce.DurationNs.Should().Be(99_000_000);
     }
 
@@ -321,11 +321,11 @@ public sealed class IncidentaryClientAdvancedTests
         await client.FlushToBackendAsync();
 
         var batch = _capturedBatches!.Single();
-        batch.Single().Status.Should().Be(200);
+        batch.Single().StatusCode.Should().Be(200);
     }
 
     [Fact]
-    public async Task RecordEvent_EventClass_IsCausal()
+    public async Task RecordEvent_Type_MatchesPassedEventType()
     {
         using var client = CreateClient();
 
@@ -333,7 +333,7 @@ public sealed class IncidentaryClientAdvancedTests
         await client.FlushToBackendAsync();
 
         var batch = _capturedBatches!.Single();
-        batch.Single().EventClass.Should().Be("causal");
+        batch.Single().Type.Should().Be("custom_event");
     }
 
     // ── Vocabulary helpers ─────────────────────────────────────────────────
@@ -348,7 +348,7 @@ public sealed class IncidentaryClientAdvancedTests
 
         var batch = _capturedBatches!.Single();
         var ce = batch.Single();
-        ce.EventType.Should().Be("webhook_in");
+        ce.Type.Should().Be("webhook_in");
         ce.Kind.Should().Be(CeKind.HttpIn);
     }
 
@@ -362,7 +362,7 @@ public sealed class IncidentaryClientAdvancedTests
 
         var batch = _capturedBatches!.Single();
         var ce = batch.Single();
-        ce.EventType.Should().Be("webhook_out");
+        ce.Type.Should().Be("webhook_out");
         ce.Kind.Should().Be(CeKind.HttpOut);
     }
 
@@ -376,7 +376,7 @@ public sealed class IncidentaryClientAdvancedTests
 
         var batch = _capturedBatches!.Single();
         var ce = batch.Single();
-        ce.EventType.Should().Be(EventTypes.QueueConsume);
+        ce.Type.Should().Be(EventTypes.QueueConsume);
         ce.Kind.Should().Be(CeKind.QueueConsume);
     }
 
@@ -389,7 +389,7 @@ public sealed class IncidentaryClientAdvancedTests
         await client.FlushToBackendAsync();
 
         var batch = _capturedBatches!.Single();
-        batch.Single().EventType.Should().Be("job_end");
+        batch.Single().Type.Should().Be("job_end");
     }
 
     // ── FlushToBackendAsync annotations ───────────────────────────────────
@@ -450,7 +450,7 @@ public sealed class IncidentaryClientAdvancedTests
             .Returns(callInfo =>
             {
                 capturedIncidentId = callInfo.ArgAt<string?>(2);
-                return true;
+                return new FlushResult { Success = true };
             });
 
         client.RecordRequest(200);
@@ -473,7 +473,7 @@ public sealed class IncidentaryClientAdvancedTests
             .Returns(callInfo =>
             {
                 capturedMode = callInfo.ArgAt<string>(1);
-                return true;
+                return new FlushResult { Success = true };
             });
 
         client.RecordRequest(200);
@@ -496,7 +496,7 @@ public sealed class IncidentaryClientAdvancedTests
             .Returns(callInfo =>
             {
                 capturedMode = callInfo.ArgAt<string>(1);
-                return true;
+                return new FlushResult { Success = true };
             });
 
         client.EscalateToIncident("inc-1");
@@ -553,7 +553,7 @@ public sealed class IncidentaryClientAdvancedTests
                 Arg.Any<string>(),
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(false); // Always fail → retries exhausted
+            .Returns(FlushResult.Failed); // Always fail → retries exhausted
 
         client.RecordRequest(200);
         await client.FlushToBackendAsync();
@@ -591,7 +591,7 @@ public sealed class IncidentaryClientAdvancedTests
             .Returns(_ =>
             {
                 flushed = true;
-                return true;
+                return new FlushResult { Success = true };
             });
 
         client.RecordRequest(200);
@@ -623,15 +623,14 @@ public sealed class IncidentaryClientAdvancedTests
 
         var ce = new CausalEvent
         {
-            CeId = "manual-ce-id",
+            Id = "manual-ce-id",
             TraceId = "manual-trace-id",
             ServiceId = "test-service",
-            WallTsNs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000L,
+            OccurredAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000L,
             Kind = CeKind.Internal,
-            EventType = "internal_task",
-            Status = 200,
+            Type = "internal_task",
+            StatusCode = 200,
             DurationNs = 0,
-            SdkVersion = SdkVersion.Current
         };
 
         client.WriteEvent(ce);
@@ -639,7 +638,7 @@ public sealed class IncidentaryClientAdvancedTests
 
         var batch = _capturedBatches!.Single();
         batch.Should().HaveCount(1);
-        batch[0].CeId.Should().Be("manual-ce-id");
+        batch[0].Id.Should().Be("manual-ce-id");
     }
 
     // ── RecordRequestStart ─────────────────────────────────────────────────
@@ -745,7 +744,7 @@ public sealed class IncidentaryClientAdvancedTests
         var events = _capturedBatches!.SelectMany(b => b).ToList();
         events.Should().ContainSingle();
         events[0].Kind.Should().Be(kind);
-        events[0].EventType.Should().Be(expectedEventType);
+        events[0].Type.Should().Be(expectedEventType);
     }
 
     // ── WithKind non-null options path ────────────────────────────────────────
@@ -774,10 +773,10 @@ public sealed class IncidentaryClientAdvancedTests
         events.Should().ContainSingle();
         var ce = events[0];
         ce.Kind.Should().Be(CeKind.QueuePublish);
-        ce.Status.Should().Be(202);
+        ce.StatusCode.Should().Be(202);
         ce.DurationNs.Should().Be(500_000);
         ce.TraceId.Should().Be("trace-abc");
-        ce.ParentCeId.Should().Be("parent-xyz");
+        ce.ParentId.Should().Be("parent-xyz");
     }
 
     [Fact]
@@ -899,7 +898,7 @@ public sealed class IncidentaryClientAdvancedTests
 
         var events = await FlushAndCapture(client);
         events.Should().HaveCount(1);
-        events[0].EventType.Should().Be(EventTypes.InternalTask);
+        events[0].Type.Should().Be(EventTypes.InternalTask);
     }
 
     // ── IncidentaryActivity.Current propagation (lines 123-124, 176-177) ─────
@@ -919,7 +918,7 @@ public sealed class IncidentaryClientAdvancedTests
         var events = await FlushAndCapture(client);
         events.Should().HaveCount(1);
         events[0].TraceId.Should().Be("trace-from-context");
-        events[0].ParentCeId.Should().Be("ce-from-context");
+        events[0].ParentId.Should().Be("ce-from-context");
     }
 
     [Fact]
@@ -937,7 +936,7 @@ public sealed class IncidentaryClientAdvancedTests
         var events = await FlushAndCapture(client);
         events.Should().HaveCount(1);
         events[0].TraceId.Should().Be("trace-event-ctx");
-        events[0].ParentCeId.Should().Be("ce-event-ctx");
+        events[0].ParentId.Should().Be("ce-event-ctx");
     }
 
     // ── [LoggerMessage] generated code (IsEnabled=true path) ─────────────────

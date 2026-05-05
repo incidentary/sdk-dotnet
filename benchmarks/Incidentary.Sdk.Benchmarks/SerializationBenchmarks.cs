@@ -14,15 +14,14 @@ public class SerializationBenchmarks
     {
         _event = new CausalEvent
         {
-            CeId = Guid.NewGuid().ToString(),
+            Id = Guid.NewGuid().ToString(),
             TraceId = Guid.NewGuid().ToString(),
             ServiceId = "bench-service",
-            WallTsNs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000L,
+            OccurredAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000L,
             Kind = CeKind.HttpIn,
-            EventType = EventTypes.HttpIn,
-            Status = 200,
+            Type = EventTypes.HttpServer,
+            StatusCode = 200,
             DurationNs = 45_000_000,
-            SdkVersion = "0.2.0"
         };
     }
 

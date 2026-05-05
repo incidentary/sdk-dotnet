@@ -71,7 +71,7 @@ public sealed class IncidentaryMiddleware
             var options = new RecordRequestOptions
             {
                 Kind = CeKind.HttpIn,
-                EventType = EventTypes.HttpIn,
+                EventType = EventTypes.HttpServer,
                 DurationNs = durationNs,
                 TraceId = traceId,
                 ParentCeId = parentCeId,

@@ -7,6 +7,6 @@ public sealed class SanityTests
     [Fact]
     public void SdkVersionIsSet()
     {
-        Assert.Equal("0.2.0", SdkVersion.Current);
+        Assert.Equal("1.0.0", SdkVersion.Current);
     }
 }

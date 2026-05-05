@@ -49,6 +49,18 @@ public sealed partial class HttpTransport : ITransport
             _httpClient.Timeout = TimeSpan.FromMilliseconds(timeoutMs);
     }
 
+    /// <summary>
+    /// Adaptive batch telemetry: EMA of flush latency in milliseconds.
+    /// Set by the client before each flush so the transport can include it in the batch envelope.
+    /// </summary>
+    public double FlushLatencyEmaMs { get; set; }
+
+    /// <summary>
+    /// Adaptive batch telemetry: current adaptive batch size.
+    /// Set by the client before each flush so the transport can include it in the batch envelope.
+    /// </summary>
+    public int CurrentBatchSize { get; set; }
+
     /// <inheritdoc />
     public bool IsHealthy =>
         !_circuitBreaker.IsOpen
@@ -56,7 +68,7 @@ public sealed partial class HttpTransport : ITransport
         && _httpClient.BaseAddress is not null;
 
     /// <inheritdoc />
-    public async Task<bool> UploadBatchAsync(
+    public async Task<FlushResult> UploadBatchAsync(
         IReadOnlyList<CausalEvent> events,
         string captureMode,
         string? incidentId = null,
@@ -65,36 +77,41 @@ public sealed partial class HttpTransport : ITransport
         try
         {
             if (!_circuitBreaker.AllowRequest())
-                return false;
+                return FlushResult.Failed;
 
             if (_quotaPause.IsPaused)
-                return false;
+                return FlushResult.Failed;
 
             var batch = new IngestBatch
             {
-                SchemaVersion = "1",
-                WorkspaceId = _workspaceId,
-                ServiceId = _serviceName,
-                Environment = _environment,
+                Specversion = "2",
+                Resource = new IngestResource
+                {
+                    WorkspaceId = _workspaceId,
+                    ServiceId = _serviceName,
+                    Environment = _environment,
+                },
+                Agent = new IngestAgent
+                {
+                    SdkVersion = SdkVersion.Current,
+                    FlushLatencyEmaMs = FlushLatencyEmaMs,
+                    CurrentBatchSize = CurrentBatchSize,
+                },
                 FlushedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000,
                 CaptureMode = captureMode,
                 Events = events,
-                SdkTelemetry = new SdkTelemetry
-                {
-                    SdkVersion = SdkVersion.Current
-                }
             };
 
             var json = JsonSerializer.Serialize(batch, WireJson.Options);
             using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/ingest/batch")
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v2/ingest")
             {
                 Content = content
             };
 
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
-            request.Headers.Add("X-Incidentary-SDK-Version", SdkVersion.Current);
+            request.Headers.Add("X-Incidentary-Agent-Version", SdkVersion.Current);
 
             if (incidentId is not null)
                 request.Headers.Add("X-Incidentary-Incident-Id", incidentId);
@@ -104,7 +121,12 @@ public sealed partial class HttpTransport : ITransport
             if (response.IsSuccessStatusCode)
             {
                 _circuitBreaker.RecordSuccess();
-                return true;
+
+                string? requestedMode = response.Headers.Contains("X-Capture-Mode-Requested")
+                    ? response.Headers.GetValues("X-Capture-Mode-Requested").FirstOrDefault()
+                    : null;
+
+                return new FlushResult { Success = true, RequestedCaptureMode = requestedMode };
             }
 
             var statusCode = (int)response.StatusCode;
@@ -114,7 +136,7 @@ public sealed partial class HttpTransport : ITransport
             {
                 LogSdkVersionTooOld(_logger, SdkVersion.Current);
                 // Treat as success (don't retry, don't trip circuit)
-                return true;
+                return new FlushResult { Success = true };
             }
 
             // 429 with ce_limit_reached — pause until next month
@@ -128,20 +150,20 @@ public sealed partial class HttpTransport : ITransport
                 {
                     _quotaPause.PauseUntilNextMonth();
                     LogQuotaPaused(_logger, _quotaPause.ResumeAt?.ToString("u") ?? "unknown");
-                    return false;
+                    return FlushResult.Failed;
                 }
             }
 
             // Other 4xx/5xx — record circuit breaker failure
             _circuitBreaker.RecordFailure();
-            return false;
+            return FlushResult.Failed;
         }
         catch (Exception ex)
         {
             _circuitBreaker.RecordFailure();
             _onError?.Invoke(ex);
             LogUploadBatchFailed(_logger, ex);
-            return false;
+            return FlushResult.Failed;
         }
     }
 
@@ -175,7 +197,7 @@ public sealed partial class HttpTransport : ITransport
             };
 
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
-            request.Headers.Add("X-Incidentary-SDK-Version", SdkVersion.Current);
+            request.Headers.Add("X-Incidentary-Agent-Version", SdkVersion.Current);
 
             using var response = await _httpClient.SendAsync(request, ct).ConfigureAwait(false);
 

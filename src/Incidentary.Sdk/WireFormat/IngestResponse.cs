@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace Incidentary.Sdk.WireFormat;
 
-/// <summary>Response from the ingest batch endpoint.</summary>
+/// <summary>Response from the ingest endpoint.</summary>
 public sealed class IngestResponse
 {
     [JsonPropertyName("accepted")]
@@ -10,4 +10,7 @@ public sealed class IngestResponse
 
     [JsonPropertyName("dropped")]
     public int Dropped { get; init; }
+
+    [JsonPropertyName("drop_reasons")]
+    public Dictionary<string, int>? DropReasons { get; init; }
 }

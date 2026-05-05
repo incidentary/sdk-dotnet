@@ -9,10 +9,12 @@ namespace Incidentary.Sdk.WireFormat;
     WriteIndented = false)]
 [JsonSerializable(typeof(IngestBatch))]
 [JsonSerializable(typeof(IngestResponse))]
+[JsonSerializable(typeof(IngestResource))]
+[JsonSerializable(typeof(IngestAgent))]
 [JsonSerializable(typeof(CausalEvent))]
 [JsonSerializable(typeof(CeDetail))]
 [JsonSerializable(typeof(RetryDetail))]
 [JsonSerializable(typeof(DownstreamDetail))]
-[JsonSerializable(typeof(SdkTelemetry))]
 [JsonSerializable(typeof(Dictionary<string, object>))]
+[JsonSerializable(typeof(Dictionary<string, int>))]
 internal partial class IncidentaryJsonContext : JsonSerializerContext { }

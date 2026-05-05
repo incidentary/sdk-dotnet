@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Incidentary.Sdk.Transport;
 using Incidentary.Sdk.WireFormat;
+using Microsoft.Extensions.Logging;
 using NSubstitute;
 using Xunit;
 
@@ -24,7 +25,7 @@ public sealed class IncidentaryClientTests : IDisposable
                 Arg.Any<string>(),
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(true);
+            .Returns(new FlushResult { Success = true });
 
         _transport.IsHealthy.Returns(true);
     }
@@ -38,15 +39,14 @@ public sealed class IncidentaryClientTests : IDisposable
 
     private static CausalEvent CreateEvent(string? eventType = null) => new()
     {
-        CeId = Guid.NewGuid().ToString(),
+        Id = Guid.NewGuid().ToString(),
         TraceId = Guid.NewGuid().ToString(),
         ServiceId = "test-service",
-        WallTsNs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000L,
+        OccurredAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000L,
         Kind = CeKind.HttpIn,
-        EventType = eventType ?? EventTypes.HttpIn,
-        Status = 200,
+        Type = eventType ?? EventTypes.HttpServer,
+        StatusCode = 200,
         DurationNs = 1_000_000,
-        SdkVersion = SdkVersion.Current
     };
 
     // ── 1. InitialMode_IsNormal ────────────────────────────────────────
@@ -100,7 +100,7 @@ public sealed class IncidentaryClientTests : IDisposable
 
         await _transport.Received(1).UploadBatchAsync(
             Arg.Is<IReadOnlyList<CausalEvent>>(e =>
-                e.Count == 1 && e[0].EventType == "custom_event"),
+                e.Count == 1 && e[0].Type == "custom_event"),
             Arg.Any<string>(),
             Arg.Any<string?>(),
             Arg.Any<CancellationToken>());
@@ -120,7 +120,7 @@ public sealed class IncidentaryClientTests : IDisposable
             Arg.Is<IReadOnlyList<CausalEvent>>(e =>
                 e.Count == 1
                 && e[0].Kind == CeKind.QueuePublish
-                && e[0].EventType == EventTypes.QueuePublish),
+                && e[0].Type == EventTypes.QueuePublish),
             Arg.Any<string>(),
             Arg.Any<string?>(),
             Arg.Any<CancellationToken>());
@@ -138,7 +138,7 @@ public sealed class IncidentaryClientTests : IDisposable
 
         await _transport.Received(1).UploadBatchAsync(
             Arg.Is<IReadOnlyList<CausalEvent>>(e =>
-                e.Count == 1 && e[0].EventType == "job_start"),
+                e.Count == 1 && e[0].Type == "job_start"),
             Arg.Any<string>(),
             Arg.Any<string?>(),
             Arg.Any<CancellationToken>());
@@ -252,5 +252,61 @@ public sealed class IncidentaryClientTests : IDisposable
         };
 
         act.Should().NotThrow();
+    }
+
+    // ── 15. FlushToBackend_LogsWhenCaptureModeRequested ────────────────
+
+    [Fact]
+    public async Task FlushToBackend_WhenCaptureModeRequested_Logs()
+    {
+        var logger = Substitute.For<ILogger<IncidentaryClient>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+
+        _transport.UploadBatchAsync(
+                Arg.Any<IReadOnlyList<CausalEvent>>(),
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new FlushResult { Success = true, RequestedCaptureMode = "FULL" });
+
+        using var client = new IncidentaryClient(_options, _transport, logger);
+
+        client.RecordRequest(200);
+        await client.FlushToBackendAsync();
+
+        logger.Received().Log(
+            LogLevel.Information,
+            Arg.Any<EventId>(),
+            Arg.Is<object>(o => o.ToString()!.Contains("FULL")),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
+    }
+
+    // ── 16. FlushToBackend_NoCaptureModeHeader_DoesNotLog ──────────────
+
+    [Fact]
+    public async Task FlushToBackend_NoCaptureModeRequested_DoesNotLogCaptureMode()
+    {
+        var logger = Substitute.For<ILogger<IncidentaryClient>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+
+        _transport.UploadBatchAsync(
+                Arg.Any<IReadOnlyList<CausalEvent>>(),
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new FlushResult { Success = true });
+
+        using var client = new IncidentaryClient(_options, _transport, logger);
+
+        client.RecordRequest(200);
+        await client.FlushToBackendAsync();
+
+        logger.DidNotReceive().Log(
+            LogLevel.Information,
+            Arg.Any<EventId>(),
+            Arg.Is<object>(o => o.ToString()!.Contains("requested capture mode")),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
     }
 }

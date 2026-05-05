@@ -20,15 +20,14 @@ public sealed class HttpTransportTests : IDisposable
     {
         return Enumerable.Range(0, count).Select(i => new CausalEvent
         {
-            CeId = $"ce-{i}",
+            Id = $"ce-{i}",
             TraceId = "trace-1",
             ServiceId = TestServiceName,
-            WallTsNs = 1733103000000000000 + i,
+            OccurredAt = 1733103000000000000 + i,
             Kind = CeKind.HttpIn,
-            EventType = EventTypes.HttpIn,
-            Status = 200,
+            Type = EventTypes.HttpServer,
+            StatusCode = 200,
             DurationNs = 45000000,
-            SdkVersion = SdkVersion.Current
         }).ToList();
     }
 
@@ -72,7 +71,7 @@ public sealed class HttpTransportTests : IDisposable
         var result = await transport.UploadBatchAsync(
             CreateTestEvents(), CaptureModes.Skeleton);
 
-        result.Should().BeTrue();
+        result.Success.Should().BeTrue();
     }
 
     [Fact]
@@ -85,7 +84,7 @@ public sealed class HttpTransportTests : IDisposable
         var result = await transport.UploadBatchAsync(
             CreateTestEvents(), CaptureModes.Skeleton);
 
-        result.Should().BeFalse();
+        result.Success.Should().BeFalse();
     }
 
     [Fact]
@@ -101,7 +100,7 @@ public sealed class HttpTransportTests : IDisposable
         request!.Headers.Authorization!.Scheme.Should().Be("Bearer");
         request.Headers.Authorization.Parameter.Should().Be(TestApiKey);
         request.Content!.Headers.ContentType!.MediaType.Should().Be("application/json");
-        request.Headers.GetValues("X-Incidentary-SDK-Version")
+        request.Headers.GetValues("X-Incidentary-Agent-Version")
             .Should().ContainSingle()
             .Which.Should().Be(SdkVersion.Current);
     }
@@ -157,7 +156,7 @@ public sealed class HttpTransportTests : IDisposable
         var result = await transport.UploadBatchAsync(
             CreateTestEvents(), CaptureModes.Skeleton);
 
-        result.Should().BeFalse();
+        result.Success.Should().BeFalse();
         requestCount.Should().Be(3);
     }
 
@@ -174,7 +173,7 @@ public sealed class HttpTransportTests : IDisposable
             CreateTestEvents(), CaptureModes.Skeleton);
 
         // 426 is treated as success (don't retry)
-        result.Should().BeTrue();
+        result.Success.Should().BeTrue();
     }
 
     [Fact]
@@ -193,7 +192,7 @@ public sealed class HttpTransportTests : IDisposable
         var result = await transport.UploadBatchAsync(
             CreateTestEvents(), CaptureModes.Skeleton);
 
-        result.Should().BeFalse();
+        result.Success.Should().BeFalse();
         transport.IsHealthy.Should().BeFalse();
     }
 
@@ -212,10 +211,11 @@ public sealed class HttpTransportTests : IDisposable
         var doc = JsonDocument.Parse(body!);
         var root = doc.RootElement;
 
-        root.GetProperty("schema_version").GetString().Should().Be("1");
-        root.GetProperty("workspace_id").GetString().Should().Be(TestWorkspaceId);
-        root.GetProperty("service_id").GetString().Should().Be(TestServiceName);
-        root.GetProperty("environment").GetString().Should().Be(TestEnvironment);
+        root.GetProperty("specversion").GetString().Should().Be("2");
+        root.GetProperty("resource").GetProperty("workspace_id").GetString().Should().Be(TestWorkspaceId);
+        root.GetProperty("resource").GetProperty("service_id").GetString().Should().Be(TestServiceName);
+        root.GetProperty("resource").GetProperty("environment").GetString().Should().Be(TestEnvironment);
+        root.GetProperty("agent").GetProperty("sdk_version").GetString().Should().Be(SdkVersion.Current);
         root.GetProperty("capture_mode").GetString().Should().Be("SKELETON");
         root.GetProperty("events").GetArrayLength().Should().Be(2);
     }
@@ -231,7 +231,7 @@ public sealed class HttpTransportTests : IDisposable
         var result = await transport.UploadBatchAsync(
             CreateTestEvents(), CaptureModes.Skeleton);
 
-        result.Should().BeFalse();
+        result.Success.Should().BeFalse();
         capturedError.Should().NotBeNull();
         capturedError.Should().BeOfType<HttpRequestException>();
     }
@@ -318,7 +318,7 @@ public sealed class HttpTransportTests : IDisposable
 
         var request = mockHandler.LastRequest;
         request.Should().NotBeNull();
-        request!.RequestUri!.PathAndQuery.Should().Be("/api/v1/ingest/batch");
+        request!.RequestUri!.PathAndQuery.Should().Be("/api/v2/ingest");
         request.Method.Should().Be(HttpMethod.Post);
     }
 
@@ -336,7 +336,7 @@ public sealed class HttpTransportTests : IDisposable
         var result = await transport.UploadBatchAsync(CreateTestEvents(), CaptureModes.Skeleton);
 
         // Not ce_limit_reached → circuit breaker records failure → returns false
-        result.Should().BeFalse();
+        result.Success.Should().BeFalse();
         // IsHealthy depends on circuit state; quota should NOT be paused
         transport.IsHealthy.Should().BeTrue(); // quota not paused (wrong reason)
     }
@@ -356,7 +356,7 @@ public sealed class HttpTransportTests : IDisposable
         var result = await transport.UploadBatchAsync(CreateTestEvents(), CaptureModes.Skeleton);
 
         // Reason is not "ce_limit_reached" → RecordFailure, not quota pause
-        result.Should().BeFalse();
+        result.Success.Should().BeFalse();
         transport.IsHealthy.Should().BeTrue(); // quota not paused
     }
 
@@ -378,7 +378,7 @@ public sealed class HttpTransportTests : IDisposable
         // Second call → _quotaPause.IsPaused = true → early return false (covers line 71)
         var result = await transport.UploadBatchAsync(CreateTestEvents(), CaptureModes.Skeleton);
 
-        result.Should().BeFalse();
+        result.Success.Should().BeFalse();
     }
 
     [Fact]
@@ -445,7 +445,7 @@ public sealed class HttpTransportTests : IDisposable
 
         var result = await transport.UploadBatchAsync(CreateTestEvents(), CaptureModes.Skeleton);
 
-        result.Should().BeTrue();
+        result.Success.Should().BeTrue();
         httpClient.Timeout.Should().Be(TimeSpan.FromMilliseconds(5000));
         httpClient.Dispose();
     }
@@ -472,7 +472,7 @@ public sealed class HttpTransportTests : IDisposable
 
         var result = await transport.UploadBatchAsync(CreateTestEvents(), CaptureModes.Skeleton);
 
-        result.Should().BeTrue();
+        result.Success.Should().BeTrue();
     }
 
     [Fact]
@@ -493,7 +493,7 @@ public sealed class HttpTransportTests : IDisposable
 
         var result = await transport.UploadBatchAsync(CreateTestEvents(), CaptureModes.Skeleton);
 
-        result.Should().BeFalse();
+        result.Success.Should().BeFalse();
     }
 
     [Fact]
@@ -514,7 +514,7 @@ public sealed class HttpTransportTests : IDisposable
 
         var result = await transport.UploadBatchAsync(CreateTestEvents(), CaptureModes.Skeleton);
 
-        result.Should().BeFalse();
+        result.Success.Should().BeFalse();
     }
 
     [Fact]
@@ -535,7 +535,7 @@ public sealed class HttpTransportTests : IDisposable
 
         var result = await transport.UploadBatchAsync(CreateTestEvents(), CaptureModes.Skeleton);
 
-        result.Should().BeTrue();
+        result.Success.Should().BeTrue();
     }
 
     [Fact]
@@ -560,7 +560,7 @@ public sealed class HttpTransportTests : IDisposable
 
         var result = await transport.UploadBatchAsync(CreateTestEvents(), CaptureModes.Skeleton);
 
-        result.Should().BeFalse();
+        result.Success.Should().BeFalse();
     }
 
     [Fact]
@@ -607,6 +607,79 @@ public sealed class HttpTransportTests : IDisposable
         var act = () => transport.NotifyBackendAsync("service.started", "svc-123");
 
         await act.Should().NotThrowAsync();
+    }
+
+    // ── X-Capture-Mode-Requested header propagation ──────────────────────
+
+    [Fact]
+    public async Task UploadBatch_Success_WithCaptureModeHeader_ReturnsRequestedCaptureMode()
+    {
+        var (transport, _) = CreateTransport(
+            handler: (_, _) =>
+            {
+                var response = new HttpResponseMessage(HttpStatusCode.OK);
+                response.Headers.Add("X-Capture-Mode-Requested", "FULL");
+                return Task.FromResult(response);
+            });
+
+        var result = await transport.UploadBatchAsync(
+            CreateTestEvents(), CaptureModes.Skeleton);
+
+        result.Success.Should().BeTrue();
+        result.RequestedCaptureMode.Should().Be("FULL");
+    }
+
+    [Fact]
+    public async Task UploadBatch_Success_WithoutCaptureModeHeader_ReturnsNullRequestedCaptureMode()
+    {
+        var (transport, _) = CreateTransport();
+
+        var result = await transport.UploadBatchAsync(
+            CreateTestEvents(), CaptureModes.Skeleton);
+
+        result.Success.Should().BeTrue();
+        result.RequestedCaptureMode.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UploadBatch_ServerError_ReturnsFailedResult()
+    {
+        var (transport, _) = CreateTransport(
+            handler: (_, _) => Task.FromResult(
+                new HttpResponseMessage(HttpStatusCode.InternalServerError)));
+
+        var result = await transport.UploadBatchAsync(
+            CreateTestEvents(), CaptureModes.Skeleton);
+
+        result.Success.Should().BeFalse();
+        result.RequestedCaptureMode.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UploadBatch_Exception_ReturnsFailedResult()
+    {
+        var (transport, _) = CreateTransport(
+            handler: (_, _) => throw new HttpRequestException("connection refused"));
+
+        var result = await transport.UploadBatchAsync(
+            CreateTestEvents(), CaptureModes.Skeleton);
+
+        result.Success.Should().BeFalse();
+        result.RequestedCaptureMode.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UploadBatch_426_ReturnsSuccessButNoCaptureMode()
+    {
+        var (transport, _) = CreateTransport(
+            handler: (_, _) => Task.FromResult(
+                new HttpResponseMessage((HttpStatusCode)426)));
+
+        var result = await transport.UploadBatchAsync(
+            CreateTestEvents(), CaptureModes.Skeleton);
+
+        result.Success.Should().BeTrue();
+        result.RequestedCaptureMode.Should().BeNull();
     }
 }
 

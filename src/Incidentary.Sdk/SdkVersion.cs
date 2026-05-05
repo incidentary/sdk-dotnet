@@ -8,5 +8,5 @@ public static class SdkVersion
     /// <summary>
     /// The current version of the Incidentary SDK.
     /// </summary>
-    public const string Current = "0.2.0";
+    public const string Current = "1.0.0";
 }

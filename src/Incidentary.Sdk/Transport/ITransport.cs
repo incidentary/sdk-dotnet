@@ -9,9 +9,10 @@ public interface ITransport : IDisposable
 {
     /// <summary>
     /// Uploads a batch of causal events to the ingest endpoint.
-    /// Returns true on success, false on failure. Never throws.
+    /// Returns a <see cref="FlushResult"/> with success/failure and any server-requested capture mode.
+    /// Never throws.
     /// </summary>
-    Task<bool> UploadBatchAsync(
+    Task<FlushResult> UploadBatchAsync(
         IReadOnlyList<CausalEvent> events,
         string captureMode,
         string? incidentId = null,

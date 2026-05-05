@@ -2,44 +2,44 @@ using System.Text.Json.Serialization;
 
 namespace Incidentary.Sdk.WireFormat;
 
-/// <summary>A causal event on the wire (SkeletonCe).</summary>
+/// <summary>A causal event on the wire (V2 format).</summary>
 public sealed class CausalEvent
 {
-    [JsonPropertyName("ce_id")]
-    public required string CeId { get; init; }
+    [JsonPropertyName("id")]
+    public required string Id { get; init; }
 
     [JsonPropertyName("trace_id")]
     public required string TraceId { get; init; }
 
-    [JsonPropertyName("parent_ce_id")]
-    public string? ParentCeId { get; init; }
+    [JsonPropertyName("parent_id")]
+    public string? ParentId { get; init; }
+
+    [JsonPropertyName("span_id")]
+    public string? SpanId { get; init; }
 
     [JsonPropertyName("service_id")]
     public required string ServiceId { get; init; }
 
-    [JsonPropertyName("wall_ts_ns")]
-    public required long WallTsNs { get; init; }
+    [JsonPropertyName("occurred_at")]
+    public required long OccurredAt { get; init; }
 
     [JsonPropertyName("kind")]
     public required CeKind Kind { get; init; }
 
-    [JsonPropertyName("event_type")]
-    public string? EventType { get; init; }
+    [JsonPropertyName("type")]
+    public string? Type { get; init; }
 
-    [JsonPropertyName("event_class")]
-    public string? EventClass { get; init; }
+    [JsonPropertyName("status_code")]
+    public required int StatusCode { get; init; }
 
-    [JsonPropertyName("status")]
-    public required int Status { get; init; }
+    [JsonPropertyName("severity")]
+    public string? Severity { get; init; }
 
     [JsonPropertyName("duration_ns")]
     public required long DurationNs { get; init; }
 
-    [JsonPropertyName("sdk_version")]
-    public required string SdkVersion { get; init; }
-
-    [JsonPropertyName("event_attrs")]
-    public Dictionary<string, object>? EventAttrs { get; init; }
+    [JsonPropertyName("attributes")]
+    public Dictionary<string, object>? Attributes { get; init; }
 
     [JsonPropertyName("detail")]
     public CeDetail? Detail { get; init; }

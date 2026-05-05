@@ -26,14 +26,13 @@ public sealed class FlushQueueTests : IAsyncDisposable
         return Enumerable.Range(0, count)
             .Select(i => new CausalEvent
             {
-                CeId = $"ce-{i}",
+                Id = $"ce-{i}",
                 TraceId = $"trace-{i}",
                 ServiceId = "test-service",
-                WallTsNs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000,
+                OccurredAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000,
                 Kind = CeKind.HttpIn,
-                Status = 200,
+                StatusCode = 200,
                 DurationNs = 1_000_000,
-                SdkVersion = "0.1.0"
             })
             .ToList();
     }
@@ -54,7 +53,7 @@ public sealed class FlushQueueTests : IAsyncDisposable
                 Arg.Any<string>(),
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(true);
+            .Returns(new FlushResult { Success = true });
 
         await using var queue = CreateQueue();
         var events = CreateEvents(10);
@@ -81,7 +80,7 @@ public sealed class FlushQueueTests : IAsyncDisposable
                 Arg.Any<string>(),
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(false);
+            .Returns(FlushResult.Failed);
 
         await using var queue = CreateQueue();
         var events = CreateEvents(5);
@@ -106,7 +105,7 @@ public sealed class FlushQueueTests : IAsyncDisposable
                 Arg.Any<string>(),
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(false, false, true);
+            .Returns(FlushResult.Failed, FlushResult.Failed, new FlushResult { Success = true });
 
         await using var queue = CreateQueue();
         var events = CreateEvents(5);
@@ -134,7 +133,7 @@ public sealed class FlushQueueTests : IAsyncDisposable
                 Arg.Any<string>(),
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(false);
+            .Returns(FlushResult.Failed);
 
         await using var queue = CreateQueue();
         var events = CreateEvents(7);
@@ -156,7 +155,7 @@ public sealed class FlushQueueTests : IAsyncDisposable
                 Arg.Any<string>(),
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(false);
+            .Returns(FlushResult.Failed);
 
         await using var queue = CreateQueue();
         var events = CreateEvents(3);
@@ -178,7 +177,7 @@ public sealed class FlushQueueTests : IAsyncDisposable
                 Arg.Any<string>(),
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(true);
+            .Returns(new FlushResult { Success = true });
 
         await using var queue = CreateQueue(maxBatchSize: 500);
         var events = CreateEvents(1200);
@@ -246,7 +245,7 @@ public sealed class FlushQueueTests : IAsyncDisposable
                 Arg.Any<string>(),
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(true);
+            .Returns(new FlushResult { Success = true });
 
         await using var queue = CreateQueue();
 
@@ -267,7 +266,7 @@ public sealed class FlushQueueTests : IAsyncDisposable
                 Arg.Any<string>(),
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(false);
+            .Returns(FlushResult.Failed);
 
         await using var queue = CreateQueue(maxBatchSize: 500);
         var events = CreateEvents(5);
@@ -301,7 +300,7 @@ public sealed class FlushQueueTests : IAsyncDisposable
                 Arg.Any<string>(),
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
-            .Returns<bool>(_ =>
+            .Returns<FlushResult>(_ =>
             {
                 cts.Cancel();
                 throw new OperationCanceledException("transport cancelled", cts.Token);
@@ -329,7 +328,7 @@ public sealed class FlushQueueTests : IAsyncDisposable
                 Arg.Any<string>(),
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
-            .Returns<bool>(_ =>
+            .Returns<FlushResult>(_ =>
             {
                 callCount++;
                 cts.Cancel(); // cancel CT during attempt 0 exception handling
@@ -356,7 +355,7 @@ public sealed class FlushQueueTests : IAsyncDisposable
                 Arg.Any<string>(),
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(false); // always fails → exhausts all retries
+            .Returns(FlushResult.Failed); // always fails → exhausts all retries
 
         var queue = new FlushQueue(
             _transport,
@@ -383,7 +382,7 @@ public sealed class FlushQueueTests : IAsyncDisposable
                 Arg.Any<string>(),
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(false); // always fails → retry delay will be attempted
+            .Returns(FlushResult.Failed); // always fails → retry delay will be attempted
 
         Func<int, CancellationToken, Task> cancellingDelay = (_, ct) =>
         {

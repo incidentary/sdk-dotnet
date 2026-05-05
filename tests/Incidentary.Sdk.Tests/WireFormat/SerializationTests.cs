@@ -10,11 +10,16 @@ public sealed class SerializationTests
     private static readonly JsonSerializerOptions Options = WireJson.Options;
 
     [Theory]
-    [InlineData(CeKind.HttpIn, "HTTP_IN")]
-    [InlineData(CeKind.HttpOut, "HTTP_OUT")]
+    [InlineData(CeKind.HttpIn, "HTTP_SERVER")]
+    [InlineData(CeKind.HttpOut, "HTTP_CLIENT")]
     [InlineData(CeKind.QueuePublish, "QUEUE_PUBLISH")]
     [InlineData(CeKind.QueueConsume, "QUEUE_CONSUME")]
     [InlineData(CeKind.Internal, "INTERNAL")]
+    [InlineData(CeKind.DbQuery, "DB_QUERY")]
+    [InlineData(CeKind.DbConnect, "DB_CONNECT")]
+    [InlineData(CeKind.RpcServer, "RPC_SERVER")]
+    [InlineData(CeKind.RpcClient, "RPC_CLIENT")]
+    [InlineData(CeKind.Job, "JOB")]
     public void CeKind_SerializesToCorrectWireString(CeKind kind, string expected)
     {
         var json = JsonSerializer.Serialize(kind, Options);
@@ -22,11 +27,16 @@ public sealed class SerializationTests
     }
 
     [Theory]
-    [InlineData("HTTP_IN", CeKind.HttpIn)]
-    [InlineData("HTTP_OUT", CeKind.HttpOut)]
+    [InlineData("HTTP_SERVER", CeKind.HttpIn)]
+    [InlineData("HTTP_CLIENT", CeKind.HttpOut)]
     [InlineData("QUEUE_PUBLISH", CeKind.QueuePublish)]
     [InlineData("QUEUE_CONSUME", CeKind.QueueConsume)]
     [InlineData("INTERNAL", CeKind.Internal)]
+    [InlineData("DB_QUERY", CeKind.DbQuery)]
+    [InlineData("DB_CONNECT", CeKind.DbConnect)]
+    [InlineData("RPC_SERVER", CeKind.RpcServer)]
+    [InlineData("RPC_CLIENT", CeKind.RpcClient)]
+    [InlineData("JOB", CeKind.Job)]
     public void CeKind_DeserializesFromWireString(string wire, CeKind expected)
     {
         var result = JsonSerializer.Deserialize<CeKind>($"\"{wire}\"", Options);
@@ -38,18 +48,18 @@ public sealed class SerializationTests
     {
         var original = new CausalEvent
         {
-            CeId = "550e8400-e29b-41d4-a716-446655440000",
+            Id = "550e8400-e29b-41d4-a716-446655440000",
             TraceId = "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
-            ParentCeId = "parent-id-123",
+            ParentId = "parent-id-123",
+            SpanId = "span-abc",
             ServiceId = "checkout-api",
-            WallTsNs = 1733103000000000001,
+            OccurredAt = 1733103000000000001,
             Kind = CeKind.HttpIn,
-            EventType = EventTypes.HttpIn,
-            EventClass = "causal",
-            Status = 200,
+            Type = EventTypes.HttpServer,
+            StatusCode = 200,
+            Severity = "info",
             DurationNs = 45000000,
-            SdkVersion = "0.2.0",
-            EventAttrs = new Dictionary<string, object>
+            Attributes = new Dictionary<string, object>
             {
                 ["route_template"] = "/orders/:id/checkout"
             },
@@ -59,45 +69,55 @@ public sealed class SerializationTests
 
         var json = JsonSerializer.Serialize(original, Options);
 
-        // Verify snake_case field names
-        json.Should().Contain("\"ce_id\"");
+        // Verify V2 field names
+        json.Should().Contain("\"id\"");
         json.Should().Contain("\"trace_id\"");
-        json.Should().Contain("\"parent_ce_id\"");
+        json.Should().Contain("\"parent_id\"");
+        json.Should().Contain("\"span_id\"");
         json.Should().Contain("\"service_id\"");
-        json.Should().Contain("\"wall_ts_ns\"");
+        json.Should().Contain("\"occurred_at\"");
         json.Should().Contain("\"kind\"");
-        json.Should().Contain("\"event_type\"");
-        json.Should().Contain("\"event_class\"");
-        json.Should().Contain("\"status\"");
+        json.Should().Contain("\"type\"");
+        json.Should().Contain("\"status_code\"");
+        json.Should().Contain("\"severity\"");
         json.Should().Contain("\"duration_ns\"");
-        json.Should().Contain("\"sdk_version\"");
-        json.Should().Contain("\"event_attrs\"");
+        json.Should().Contain("\"attributes\"");
         json.Should().Contain("\"captured_before_alert\"");
         json.Should().Contain("\"ring_buffer_seq\"");
 
-        // Verify CeKind serialization
-        json.Should().Contain("\"HTTP_IN\"");
+        // V1 field names must NOT appear
+        json.Should().NotContain("\"ce_id\"");
+        json.Should().NotContain("\"parent_ce_id\"");
+        json.Should().NotContain("\"wall_ts_ns\"");
+        json.Should().NotContain("\"event_type\"");
+        json.Should().NotContain("\"event_class\"");
+        json.Should().NotContain("\"status\":");
+        json.Should().NotContain("\"sdk_version\"");
+        json.Should().NotContain("\"event_attrs\"");
+
+        // Verify CeKind serialization (V2: HTTP_SERVER)
+        json.Should().Contain("\"HTTP_SERVER\"");
 
         // Verify values
         json.Should().Contain("\"checkout-api\"");
         json.Should().Contain("1733103000000000001");
-        json.Should().Contain("\"http_in\"");
+        json.Should().Contain("\"http_server\"");
 
         // Deserialize back
         var deserialized = JsonSerializer.Deserialize<CausalEvent>(json, Options);
 
         deserialized.Should().NotBeNull();
-        deserialized!.CeId.Should().Be(original.CeId);
+        deserialized!.Id.Should().Be(original.Id);
         deserialized.TraceId.Should().Be(original.TraceId);
-        deserialized.ParentCeId.Should().Be(original.ParentCeId);
+        deserialized.ParentId.Should().Be(original.ParentId);
+        deserialized.SpanId.Should().Be(original.SpanId);
         deserialized.ServiceId.Should().Be(original.ServiceId);
-        deserialized.WallTsNs.Should().Be(original.WallTsNs);
+        deserialized.OccurredAt.Should().Be(original.OccurredAt);
         deserialized.Kind.Should().Be(original.Kind);
-        deserialized.EventType.Should().Be(original.EventType);
-        deserialized.EventClass.Should().Be(original.EventClass);
-        deserialized.Status.Should().Be(original.Status);
+        deserialized.Type.Should().Be(original.Type);
+        deserialized.StatusCode.Should().Be(original.StatusCode);
+        deserialized.Severity.Should().Be(original.Severity);
         deserialized.DurationNs.Should().Be(original.DurationNs);
-        deserialized.SdkVersion.Should().Be(original.SdkVersion);
         deserialized.CapturedBeforeAlert.Should().Be(true);
         deserialized.RingBufferSeq.Should().Be(42);
     }
@@ -107,84 +127,84 @@ public sealed class SerializationTests
     {
         var batch = new IngestBatch
         {
-            SchemaVersion = "1",
-            WorkspaceId = "ws_01ABCDEF",
-            ServiceId = "checkout-api",
-            Environment = "production",
+            Specversion = "2",
+            Resource = new IngestResource
+            {
+                WorkspaceId = "ws_01ABCDEF",
+                ServiceId = "checkout-api",
+                Environment = "production",
+                DeployId = "deploy-123",
+                GitSha = "abc1234",
+            },
+            Agent = new IngestAgent
+            {
+                SdkVersion = "1.0.0",
+                QueueDepth = 5,
+                DroppedCeCount = 0,
+                FlushLatencyMs = 12,
+            },
             FlushedAt = 1733103000000000000,
             CaptureMode = CaptureModes.Skeleton,
             Events = new List<CausalEvent>
             {
                 new()
                 {
-                    CeId = "550e8400-e29b-41d4-a716-446655440000",
+                    Id = "550e8400-e29b-41d4-a716-446655440000",
                     TraceId = "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
                     ServiceId = "checkout-api",
-                    WallTsNs = 1733103000000000001,
+                    OccurredAt = 1733103000000000001,
                     Kind = CeKind.HttpIn,
-                    EventType = EventTypes.HttpIn,
-                    Status = 200,
+                    Type = EventTypes.HttpServer,
+                    StatusCode = 200,
                     DurationNs = 45000000,
-                    SdkVersion = "0.2.0"
                 },
                 new()
                 {
-                    CeId = "660e8400-e29b-41d4-a716-446655440001",
+                    Id = "660e8400-e29b-41d4-a716-446655440001",
                     TraceId = "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
-                    ParentCeId = "550e8400-e29b-41d4-a716-446655440000",
+                    ParentId = "550e8400-e29b-41d4-a716-446655440000",
                     ServiceId = "checkout-api",
-                    WallTsNs = 1733103000000000010,
+                    OccurredAt = 1733103000000000010,
                     Kind = CeKind.HttpOut,
-                    EventType = EventTypes.HttpOut,
-                    Status = 201,
+                    Type = EventTypes.HttpClient,
+                    StatusCode = 201,
                     DurationNs = 12000000,
-                    SdkVersion = "0.2.0"
                 }
             },
-            DeployId = "deploy-123",
-            GitSha = "abc1234",
-            SdkTelemetry = new SdkTelemetry
-            {
-                SdkVersion = "0.2.0",
-                QueueDepth = 5,
-                DroppedCeCount = 0,
-                FlushLatencyMs = 12
-            }
         };
 
         var json = JsonSerializer.Serialize(batch, Options);
 
-        // Verify batch envelope fields
-        json.Should().Contain("\"schema_version\"");
-        json.Should().Contain("\"workspace_id\"");
-        json.Should().Contain("\"service_id\"");
-        json.Should().Contain("\"environment\"");
+        // Verify V2 batch envelope fields
+        json.Should().Contain("\"specversion\"");
+        json.Should().Contain("\"resource\"");
+        json.Should().Contain("\"agent\"");
         json.Should().Contain("\"flushed_at\"");
         json.Should().Contain("\"capture_mode\"");
         json.Should().Contain("\"events\"");
-        json.Should().Contain("\"deploy_id\"");
-        json.Should().Contain("\"git_sha\"");
-        json.Should().Contain("\"sdk_telemetry\"");
+
+        // V1 batch fields must NOT appear at top level
+        json.Should().NotContain("\"schema_version\"");
 
         // Round-trip
         var deserialized = JsonSerializer.Deserialize<IngestBatch>(json, Options);
 
         deserialized.Should().NotBeNull();
-        deserialized!.SchemaVersion.Should().Be("1");
-        deserialized.WorkspaceId.Should().Be("ws_01ABCDEF");
-        deserialized.ServiceId.Should().Be("checkout-api");
-        deserialized.Environment.Should().Be("production");
+        deserialized!.Specversion.Should().Be("2");
+        deserialized.Resource.WorkspaceId.Should().Be("ws_01ABCDEF");
+        deserialized.Resource.ServiceId.Should().Be("checkout-api");
+        deserialized.Resource.Environment.Should().Be("production");
+        deserialized.Resource.DeployId.Should().Be("deploy-123");
+        deserialized.Resource.GitSha.Should().Be("abc1234");
+        deserialized.Agent.SdkVersion.Should().Be("1.0.0");
+        deserialized.Agent.SdkLanguage.Should().Be("dotnet");
+        deserialized.Agent.QueueDepth.Should().Be(5);
         deserialized.FlushedAt.Should().Be(1733103000000000000);
         deserialized.CaptureMode.Should().Be(CaptureModes.Skeleton);
         deserialized.Events.Should().HaveCount(2);
         deserialized.Events[0].Kind.Should().Be(CeKind.HttpIn);
         deserialized.Events[1].Kind.Should().Be(CeKind.HttpOut);
-        deserialized.Events[1].ParentCeId.Should().Be("550e8400-e29b-41d4-a716-446655440000");
-        deserialized.DeployId.Should().Be("deploy-123");
-        deserialized.GitSha.Should().Be("abc1234");
-        deserialized.SdkTelemetry.Should().NotBeNull();
-        deserialized.SdkTelemetry!.SdkLanguage.Should().Be("dotnet");
-        deserialized.SdkTelemetry.QueueDepth.Should().Be(5);
+        deserialized.Events[1].ParentId.Should().Be("550e8400-e29b-41d4-a716-446655440000");
     }
 
     [Fact]
@@ -192,22 +212,22 @@ public sealed class SerializationTests
     {
         var ce = new CausalEvent
         {
-            CeId = "test-id",
+            Id = "test-id",
             TraceId = "test-trace",
             ServiceId = "test-svc",
-            WallTsNs = 100,
+            OccurredAt = 100,
             Kind = CeKind.Internal,
-            Status = 200,
+            StatusCode = 200,
             DurationNs = 1000,
-            SdkVersion = "0.2.0"
         };
 
         var json = JsonSerializer.Serialize(ce, Options);
 
-        json.Should().NotContain("\"parent_ce_id\"");
-        json.Should().NotContain("\"event_type\"");
-        json.Should().NotContain("\"event_class\"");
-        json.Should().NotContain("\"event_attrs\"");
+        json.Should().NotContain("\"parent_id\"");
+        json.Should().NotContain("\"span_id\"");
+        json.Should().NotContain("\"type\"");
+        json.Should().NotContain("\"severity\"");
+        json.Should().NotContain("\"attributes\"");
         json.Should().NotContain("\"detail\"");
         json.Should().NotContain("\"captured_before_alert\"");
         json.Should().NotContain("\"ring_buffer_seq\"");
@@ -252,14 +272,13 @@ public sealed class SerializationTests
 
         var ce = new CausalEvent
         {
-            CeId = "test-id",
+            Id = "test-id",
             TraceId = "test-trace",
             ServiceId = "test-svc",
-            WallTsNs = 100,
+            OccurredAt = 100,
             Kind = CeKind.HttpOut,
-            Status = 200,
+            StatusCode = 200,
             DurationNs = 1000,
-            SdkVersion = "0.2.0",
             Detail = detail
         };
 
@@ -312,26 +331,32 @@ public sealed class SerializationTests
     {
         var batch = new IngestBatch
         {
-            SchemaVersion = "1",
-            WorkspaceId = "ws_01ABCDEF",
-            ServiceId = "checkout-api",
-            Environment = "production",
+            Specversion = "2",
+            Resource = new IngestResource
+            {
+                WorkspaceId = "ws_01ABCDEF",
+                ServiceId = "checkout-api",
+                Environment = "production",
+            },
+            Agent = new IngestAgent
+            {
+                SdkVersion = "1.0.0",
+            },
             FlushedAt = 1733103000000000000,
             CaptureMode = CaptureModes.Skeleton,
             Events = new List<CausalEvent>
             {
                 new()
                 {
-                    CeId = "550e8400-e29b-41d4-a716-446655440000",
+                    Id = "550e8400-e29b-41d4-a716-446655440000",
                     TraceId = "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
                     ServiceId = "checkout-api",
-                    WallTsNs = 1733103000000000001,
+                    OccurredAt = 1733103000000000001,
                     Kind = CeKind.HttpIn,
-                    EventType = EventTypes.HttpIn,
-                    Status = 200,
+                    Type = EventTypes.HttpServer,
+                    StatusCode = 200,
                     DurationNs = 45000000,
-                    SdkVersion = "0.2.0",
-                    EventAttrs = new Dictionary<string, object>
+                    Attributes = new Dictionary<string, object>
                     {
                         ["route_template"] = "/orders/:id/checkout"
                     }
@@ -344,38 +369,36 @@ public sealed class SerializationTests
         var root = doc.RootElement;
 
         // Batch envelope
-        root.GetProperty("schema_version").GetString().Should().Be("1");
-        root.GetProperty("workspace_id").GetString().Should().Be("ws_01ABCDEF");
-        root.GetProperty("service_id").GetString().Should().Be("checkout-api");
-        root.GetProperty("environment").GetString().Should().Be("production");
+        root.GetProperty("specversion").GetString().Should().Be("2");
+        var resource = root.GetProperty("resource");
+        resource.GetProperty("workspace_id").GetString().Should().Be("ws_01ABCDEF");
+        resource.GetProperty("service_id").GetString().Should().Be("checkout-api");
+        resource.GetProperty("environment").GetString().Should().Be("production");
+        // Null fields must be absent (WhenWritingNull)
+        resource.TryGetProperty("deploy_id", out _).Should().BeFalse();
+        resource.TryGetProperty("git_sha", out _).Should().BeFalse();
         root.GetProperty("flushed_at").GetInt64().Should().Be(1733103000000000000);
         root.GetProperty("capture_mode").GetString().Should().Be("SKELETON");
-
-        // Null fields must be absent (WhenWritingNull)
-        root.TryGetProperty("deploy_id", out _).Should().BeFalse();
-        root.TryGetProperty("git_sha", out _).Should().BeFalse();
-        root.TryGetProperty("sdk_telemetry", out _).Should().BeFalse();
 
         // Events array
         var events = root.GetProperty("events");
         events.GetArrayLength().Should().Be(1);
 
         var ev = events[0];
-        ev.GetProperty("ce_id").GetString().Should().Be("550e8400-e29b-41d4-a716-446655440000");
+        ev.GetProperty("id").GetString().Should().Be("550e8400-e29b-41d4-a716-446655440000");
         ev.GetProperty("trace_id").GetString().Should().Be("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
         ev.GetProperty("service_id").GetString().Should().Be("checkout-api");
-        ev.GetProperty("wall_ts_ns").GetInt64().Should().Be(1733103000000000001);
-        ev.GetProperty("kind").GetString().Should().Be("HTTP_IN");
-        ev.GetProperty("event_type").GetString().Should().Be("http_in");
-        ev.GetProperty("status").GetInt32().Should().Be(200);
+        ev.GetProperty("occurred_at").GetInt64().Should().Be(1733103000000000001);
+        ev.GetProperty("kind").GetString().Should().Be("HTTP_SERVER");
+        ev.GetProperty("type").GetString().Should().Be("http_server");
+        ev.GetProperty("status_code").GetInt32().Should().Be(200);
         ev.GetProperty("duration_ns").GetInt64().Should().Be(45000000);
-        ev.GetProperty("sdk_version").GetString().Should().Be("0.2.0");
 
-        // parent_ce_id is null so must be absent (WhenWritingNull)
-        ev.TryGetProperty("parent_ce_id", out _).Should().BeFalse();
+        // parent_id is null so must be absent (WhenWritingNull)
+        ev.TryGetProperty("parent_id", out _).Should().BeFalse();
 
-        // event_attrs
-        var attrs = ev.GetProperty("event_attrs");
+        // attributes
+        var attrs = ev.GetProperty("attributes");
         attrs.GetProperty("route_template").GetString().Should().Be("/orders/:id/checkout");
     }
 
@@ -385,32 +408,53 @@ public sealed class SerializationTests
         var response = new IngestResponse
         {
             Accepted = 10,
-            Dropped = 2
+            Dropped = 2,
+            DropReasons = new Dictionary<string, int>
+            {
+                ["invalid_trace_id"] = 1,
+                ["quota_exceeded"] = 1
+            }
         };
 
         var json = JsonSerializer.Serialize(response, Options);
 
         json.Should().Contain("\"accepted\"");
         json.Should().Contain("\"dropped\"");
+        json.Should().Contain("\"drop_reasons\"");
 
         var deserialized = JsonSerializer.Deserialize<IngestResponse>(json, Options);
         deserialized.Should().NotBeNull();
         deserialized!.Accepted.Should().Be(10);
         deserialized.Dropped.Should().Be(2);
+        deserialized.DropReasons.Should().ContainKey("invalid_trace_id").WhoseValue.Should().Be(1);
+        deserialized.DropReasons.Should().ContainKey("quota_exceeded").WhoseValue.Should().Be(1);
     }
 
     [Fact]
-    public void SdkTelemetry_DefaultLanguageIsDotnet()
+    public void IngestResponse_NullDropReasons_Omitted()
     {
-        var telemetry = new SdkTelemetry
+        var response = new IngestResponse
         {
-            SdkVersion = "0.2.0"
+            Accepted = 5,
+            Dropped = 0
         };
 
-        var json = JsonSerializer.Serialize(telemetry, Options);
+        var json = JsonSerializer.Serialize(response, Options);
+        json.Should().NotContain("\"drop_reasons\"");
+    }
+
+    [Fact]
+    public void IngestAgent_DefaultLanguageIsDotnet()
+    {
+        var agent = new IngestAgent
+        {
+            SdkVersion = "1.0.0"
+        };
+
+        var json = JsonSerializer.Serialize(agent, Options);
         json.Should().Contain("\"dotnet\"");
 
-        var deserialized = JsonSerializer.Deserialize<SdkTelemetry>(json, Options);
+        var deserialized = JsonSerializer.Deserialize<IngestAgent>(json, Options);
         deserialized.Should().NotBeNull();
         deserialized!.SdkLanguage.Should().Be("dotnet");
     }
@@ -425,14 +469,13 @@ public sealed class SerializationTests
     {
         const string json = """
             {
-                "ce_id": "abc",
+                "id": "abc",
                 "trace_id": "trace-1",
                 "service_id": "svc",
-                "wall_ts_ns": 100,
-                "kind": "HTTP_IN",
-                "status": 200,
+                "occurred_at": 100,
+                "kind": "HTTP_SERVER",
+                "status_code": 200,
                 "duration_ns": 1000,
-                "sdk_version": "0.1.0",
                 "__unknown_future_field__": "should be skipped gracefully"
             }
             """;
@@ -440,7 +483,7 @@ public sealed class SerializationTests
         var result = JsonSerializer.Deserialize<CausalEvent>(json, Options);
 
         result.Should().NotBeNull();
-        result!.CeId.Should().Be("abc");
+        result!.Id.Should().Be("abc");
     }
 
     [Fact]
@@ -448,10 +491,15 @@ public sealed class SerializationTests
     {
         const string json = """
             {
-                "schema_version": "1",
-                "workspace_id": "ws-1",
-                "service_id": "svc",
-                "environment": "test",
+                "specversion": "2",
+                "resource": {
+                    "workspace_id": "ws-1",
+                    "service_id": "svc",
+                    "environment": "test"
+                },
+                "agent": {
+                    "sdk_version": "1.0.0"
+                },
                 "flushed_at": 100,
                 "capture_mode": "SKELETON",
                 "events": [],
@@ -462,7 +510,7 @@ public sealed class SerializationTests
         var result = JsonSerializer.Deserialize<IngestBatch>(json, Options);
 
         result.Should().NotBeNull();
-        result!.WorkspaceId.Should().Be("ws-1");
+        result!.Resource.WorkspaceId.Should().Be("ws-1");
     }
 
     [Fact]
@@ -478,11 +526,11 @@ public sealed class SerializationTests
     }
 
     [Fact]
-    public void SdkTelemetry_Deserialize_UnknownProperty_IsIgnored()
+    public void IngestAgent_Deserialize_UnknownProperty_IsIgnored()
     {
         const string json = """
             {
-                "sdk_version": "0.2.0",
+                "sdk_version": "1.0.0",
                 "sdk_language": "dotnet",
                 "queue_depth": 10,
                 "dropped_ce_count": 2,
@@ -491,11 +539,29 @@ public sealed class SerializationTests
             }
             """;
 
-        var result = JsonSerializer.Deserialize<SdkTelemetry>(json, Options);
+        var result = JsonSerializer.Deserialize<IngestAgent>(json, Options);
 
         result.Should().NotBeNull();
         result!.QueueDepth.Should().Be(10);
         result.DroppedCeCount.Should().Be(2);
+    }
+
+    [Fact]
+    public void IngestResource_Deserialize_UnknownProperty_IsIgnored()
+    {
+        const string json = """
+            {
+                "workspace_id": "ws-1",
+                "service_id": "svc",
+                "environment": "prod",
+                "__future__": "ignored"
+            }
+            """;
+
+        var result = JsonSerializer.Deserialize<IngestResource>(json, Options);
+
+        result.Should().NotBeNull();
+        result!.WorkspaceId.Should().Be("ws-1");
     }
 
     [Fact]
@@ -508,14 +574,13 @@ public sealed class SerializationTests
         };
         var ce = new CausalEvent
         {
-            CeId = "x",
+            Id = "x",
             TraceId = "t",
             ServiceId = "svc",
-            WallTsNs = 100,
+            OccurredAt = 100,
             Kind = CeKind.HttpIn,
-            Status = 200,
+            StatusCode = 200,
             DurationNs = 1000,
-            SdkVersion = "0.1.0",
             Detail = detail
         };
 
@@ -581,20 +646,16 @@ public sealed class SerializationTests
         var detail = new CeDetail
         {
             Method = "DELETE"
-            // RouteKey, RouteTemplate, RequestBytes, ResponseBytes,
-            // RequestHeaders, ResponseHeaders, Retry, Downstream,
-            // LocalErrorClassification, PayloadSnippet — all null
         };
         var ce = new CausalEvent
         {
-            CeId = "x",
+            Id = "x",
             TraceId = "t",
             ServiceId = "svc",
-            WallTsNs = 100,
+            OccurredAt = 100,
             Kind = CeKind.HttpIn,
-            Status = 204,
+            StatusCode = 204,
             DurationNs = 500,
-            SdkVersion = "0.1.0",
             Detail = detail
         };
 
@@ -610,15 +671,21 @@ public sealed class SerializationTests
     }
 
     [Fact]
-    public void IngestBatch_WithNullOptionalFields_SerializesWithoutThem()
+    public void IngestBatch_WithNullOptionalResourceFields_SerializesWithoutThem()
     {
-        // DeployId, GitSha, SdkTelemetry all null
         var batch = new IngestBatch
         {
-            SchemaVersion = "1",
-            WorkspaceId = "ws-1",
-            ServiceId = "svc",
-            Environment = "prod",
+            Specversion = "2",
+            Resource = new IngestResource
+            {
+                WorkspaceId = "ws-1",
+                ServiceId = "svc",
+                Environment = "prod",
+            },
+            Agent = new IngestAgent
+            {
+                SdkVersion = "1.0.0",
+            },
             FlushedAt = 100,
             CaptureMode = CaptureModes.Skeleton,
             Events = []
@@ -626,11 +693,10 @@ public sealed class SerializationTests
 
         var json = JsonSerializer.Serialize(batch, Options);
         var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
+        var resource = doc.RootElement.GetProperty("resource");
 
-        root.TryGetProperty("deploy_id", out _).Should().BeFalse();
-        root.TryGetProperty("git_sha", out _).Should().BeFalse();
-        root.TryGetProperty("sdk_telemetry", out _).Should().BeFalse();
+        resource.TryGetProperty("deploy_id", out _).Should().BeFalse();
+        resource.TryGetProperty("git_sha", out _).Should().BeFalse();
     }
 
     [Fact]
@@ -643,7 +709,7 @@ public sealed class SerializationTests
     [Fact]
     public void CeKind_InvalidEnumValue_ThrowsJsonException()
     {
-        // Cast an out-of-range integer to CeKind → Write switch falls to default
+        // Cast an out-of-range integer to CeKind -> Write switch falls to default
         var invalidKind = (CeKind)999;
         var act = () => JsonSerializer.Serialize(invalidKind, Options);
         act.Should().Throw<JsonException>();

@@ -150,7 +150,7 @@ public sealed class IncidentaryDelegatingHandlerTests
             200,
             Arg.Is<RecordRequestOptions>(o =>
                 o.Kind == CeKind.HttpOut &&
-                o.EventType == EventTypes.HttpOut));
+                o.EventType == EventTypes.HttpClient));
     }
 
     [Fact]

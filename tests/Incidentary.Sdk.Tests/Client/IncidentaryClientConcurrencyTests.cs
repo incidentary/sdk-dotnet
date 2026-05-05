@@ -21,7 +21,7 @@ public sealed class IncidentaryClientConcurrencyTests
                 Arg.Any<string>(),
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(true);
+            .Returns(new FlushResult { Success = true });
 
         return new IncidentaryClient(
             new IncidentaryClientOptions
