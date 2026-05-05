@@ -4,9 +4,11 @@ using Incidentary.Sdk.Context;
 using Incidentary.Sdk.Integrations;
 using Incidentary.Sdk.PreArm;
 using Incidentary.Sdk.Redaction;
+using Incidentary.Sdk.TraceCap;
 using Incidentary.Sdk.Transport;
 using Incidentary.Sdk.WireFormat;
 using Microsoft.Extensions.Logging;
+using TC = Incidentary.Sdk.TraceCap.TraceCap;
 
 namespace Incidentary.Sdk;
 
@@ -27,6 +29,22 @@ public sealed partial class IncidentaryClient : IIncidentaryClient
     private readonly long _startTicks = Environment.TickCount64;
     private readonly HttpClient? _ownedHttpClient; // non-null only when created by this constructor
     private int _disposed;
+
+    // ─── Adaptive batch sizing ──────────────────────────────────────────
+    private const double EmaAlpha = 0.3;
+    private const int MinBatchSize = 10;
+    private const int MaxBatchSize = 5_000;
+    private const int DefaultBatchSize = 500;
+
+    private double _flushLatencyEma;
+    private int _currentBatchSize = DefaultBatchSize;
+    private readonly object _adaptiveLock = new();
+
+    // ─── L1 Trace Cap ───────────────────────────────────────────────────
+    // Drops bytes before they hit the buffer when a single service emits
+    // a runaway trace. Spec at docs/specs/l1-trace-cap.md (in main repo).
+    private readonly TC _traceCap;
+    private long _traceCapDroppedTotal;
 
     /// <summary>Creates a new Incidentary client with the specified options.</summary>
     public IncidentaryClient(IncidentaryClientOptions options, ILogger<IncidentaryClient>? logger = null)
@@ -78,6 +96,12 @@ public sealed partial class IncidentaryClient : IIncidentaryClient
             options,
             onModeChanged: OnModeChanged);
 
+        _traceCap = new TC(new TraceCapOptions
+        {
+            ServiceId = options.ServiceName,
+            Enabled = options.TraceCapEnabled,
+        });
+
         if (options.AutoInstrument)
         {
             _integrationRegistry = new IntegrationRegistry(logger, options.OnError);
@@ -104,10 +128,28 @@ public sealed partial class IncidentaryClient : IIncidentaryClient
         _preArmEngine = new PreArmEngine(
             options,
             onModeChanged: OnModeChanged);
+
+        _traceCap = new TC(new TraceCapOptions
+        {
+            ServiceId = options.ServiceName,
+            Enabled = options.TraceCapEnabled,
+        });
     }
 
     /// <inheritdoc />
     public ClientCaptureMode CaptureMode => _preArmEngine.Mode;
+
+    /// <summary>Current EMA of flush latency in milliseconds. Updated after each successful flush.</summary>
+    public double FlushLatencyEmaMs
+    {
+        get { lock (_adaptiveLock) return _flushLatencyEma; }
+    }
+
+    /// <summary>Current adaptive batch size (10..5000). Used as the max batch size for the next flush.</summary>
+    public int CurrentBatchSize
+    {
+        get { lock (_adaptiveLock) return _currentBatchSize; }
+    }
 
     /// <inheritdoc />
     public bool ShouldCaptureDetail =>
@@ -126,18 +168,16 @@ public sealed partial class IncidentaryClient : IIncidentaryClient
 
             var ce = new CausalEvent
             {
-                CeId = Guid.NewGuid().ToString(),
+                Id = Guid.NewGuid().ToString(),
                 TraceId = traceId,
-                ParentCeId = parentCeId,
+                ParentId = parentCeId,
                 ServiceId = _options.ServiceName,
-                WallTsNs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000L,
+                OccurredAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000L,
                 Kind = kind,
-                EventType = eventType,
-                EventClass = "causal",
-                Status = statusCode,
+                Type = eventType,
+                StatusCode = statusCode,
                 DurationNs = durationNs,
-                SdkVersion = SdkVersion.Current,
-                EventAttrs = EventAttrsSanitizer.Sanitize(options?.EventAttrs),
+                Attributes = EventAttrsSanitizer.Sanitize(options?.EventAttrs),
                 Detail = ShouldCaptureDetail ? BuildDetail(options) : null
             };
 
@@ -187,18 +227,16 @@ public sealed partial class IncidentaryClient : IIncidentaryClient
 
             var ce = new CausalEvent
             {
-                CeId = Guid.NewGuid().ToString(),
+                Id = Guid.NewGuid().ToString(),
                 TraceId = traceId,
-                ParentCeId = parentCeId,
+                ParentId = parentCeId,
                 ServiceId = _options.ServiceName,
-                WallTsNs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000L,
+                OccurredAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000L,
                 Kind = kind,
-                EventType = eventType,
-                EventClass = "causal",
-                Status = options?.Status ?? 200,
+                Type = eventType,
+                StatusCode = options?.Status ?? 200,
                 DurationNs = options?.DurationNs ?? 0,
-                SdkVersion = SdkVersion.Current,
-                EventAttrs = EventAttrsSanitizer.Sanitize(attrs.Count > 0 ? attrs : null)
+                Attributes = EventAttrsSanitizer.Sanitize(attrs.Count > 0 ? attrs : null)
             };
 
             WriteEvent(ce);
@@ -238,6 +276,41 @@ public sealed partial class IncidentaryClient : IIncidentaryClient
     {
         try
         {
+            var verdict = _traceCap.Observe(ce.TraceId);
+            if (verdict.ShouldDrop)
+            {
+                Interlocked.Increment(ref _traceCapDroppedTotal);
+                return;
+            }
+            if (verdict.Tier == VerdictTier.Truncating)
+            {
+                // Boundary span — mark it so downstream UIs can show the
+                // truncation point. All later spans for this trace drop
+                // before reaching this method.
+                var attrs = ce.Attributes is null
+                    ? new Dictionary<string, object>()
+                    : new Dictionary<string, object>(ce.Attributes);
+                attrs["incidentary.trace.truncated_in_sdk"] = true;
+                ce = new CausalEvent
+                {
+                    Id = ce.Id,
+                    TraceId = ce.TraceId,
+                    ParentId = ce.ParentId,
+                    SpanId = ce.SpanId,
+                    ServiceId = ce.ServiceId,
+                    OccurredAt = ce.OccurredAt,
+                    Kind = ce.Kind,
+                    Type = ce.Type,
+                    StatusCode = ce.StatusCode,
+                    Severity = ce.Severity,
+                    DurationNs = ce.DurationNs,
+                    Attributes = attrs,
+                    Detail = ce.Detail,
+                    CapturedBeforeAlert = ce.CapturedBeforeAlert,
+                    RingBufferSeq = ce.RingBufferSeq,
+                };
+            }
+
             _buffer.Write(ce);
         }
         catch (Exception ex)
@@ -245,6 +318,23 @@ public sealed partial class IncidentaryClient : IIncidentaryClient
             SafeOnError(ex);
         }
     }
+
+    /// <summary>
+    /// Register a callback invoked at most once per (trace_id, tier) when
+    /// the L1 trace cap detects a runaway trace in this client.
+    /// Useful for routing the structured signal into the customer's
+    /// existing observability pipeline.
+    /// </summary>
+    public void OnTraceCapTransition(Action<TraceCapEvent> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        _traceCap.SetHook(hook);
+    }
+
+    /// <summary>
+    /// Cumulative count of spans dropped at L1 by this client.
+    /// </summary>
+    public long TraceCapDroppedTotal => Interlocked.Read(ref _traceCapDroppedTotal);
 
     /// <inheritdoc />
     public async Task FlushToBackendAsync(string? incidentId = null, CancellationToken ct = default)
@@ -261,18 +351,18 @@ public sealed partial class IncidentaryClient : IIncidentaryClient
             {
                 annotated.Add(new CausalEvent
                 {
-                    CeId = ce.CeId,
+                    Id = ce.Id,
                     TraceId = ce.TraceId,
-                    ParentCeId = ce.ParentCeId,
+                    ParentId = ce.ParentId,
+                    SpanId = ce.SpanId,
                     ServiceId = ce.ServiceId,
-                    WallTsNs = ce.WallTsNs,
+                    OccurredAt = ce.OccurredAt,
                     Kind = ce.Kind,
-                    EventType = ce.EventType,
-                    EventClass = ce.EventClass,
-                    Status = ce.Status,
+                    Type = ce.Type,
+                    StatusCode = ce.StatusCode,
+                    Severity = ce.Severity,
                     DurationNs = ce.DurationNs,
-                    SdkVersion = ce.SdkVersion,
-                    EventAttrs = ce.EventAttrs,
+                    Attributes = ce.Attributes,
                     Detail = ce.Detail,
                     CapturedBeforeAlert = CaptureMode != ClientCaptureMode.Incident,
                     RingBufferSeq = seq++
@@ -283,7 +373,34 @@ public sealed partial class IncidentaryClient : IIncidentaryClient
                 ? CaptureModes.Skeleton
                 : CaptureModes.Full;
 
-            await _flushQueue.FlushAsync(annotated, captureMode, incidentId, ct).ConfigureAwait(false);
+            // Update transport telemetry fields before flushing
+            if (_transport is HttpTransport httpTransport)
+            {
+                lock (_adaptiveLock)
+                {
+                    httpTransport.FlushLatencyEmaMs = _flushLatencyEma;
+                    httpTransport.CurrentBatchSize = _currentBatchSize;
+                }
+            }
+
+            var flushedBefore = _flushQueue.TotalFlushed;
+            var sw = Stopwatch.StartNew();
+
+            var requestedCaptureMode = await _flushQueue.FlushAsync(annotated, captureMode, incidentId, ct).ConfigureAwait(false);
+
+            sw.Stop();
+
+            // Only update EMA and batch size if at least some events were flushed successfully
+            var flushedAfter = _flushQueue.TotalFlushed;
+            if (flushedAfter > flushedBefore)
+            {
+                UpdateAdaptiveBatchSize(sw.Elapsed.TotalMilliseconds);
+            }
+
+            if (requestedCaptureMode is not null && _logger is not null)
+            {
+                LogCaptureModeRequested(_logger, requestedCaptureMode);
+            }
         }
         catch (Exception ex)
         {
@@ -399,11 +516,13 @@ public sealed partial class IncidentaryClient : IIncidentaryClient
 
     private static string MapKindToEventType(CeKind kind) => kind switch
     {
-        CeKind.HttpIn => EventTypes.HttpIn,
-        CeKind.HttpOut => EventTypes.HttpOut,
+        CeKind.HttpIn => EventTypes.HttpServer,
+        CeKind.HttpOut => EventTypes.HttpClient,
         CeKind.QueuePublish => EventTypes.QueuePublish,
         CeKind.QueueConsume => EventTypes.QueueConsume,
         CeKind.Internal => EventTypes.InternalTask,
+        CeKind.DbQuery => EventTypes.DbQuery,
+        CeKind.Job => EventTypes.JobStart,
         _ => EventTypes.InternalTask
     };
 
@@ -422,6 +541,30 @@ public sealed partial class IncidentaryClient : IIncidentaryClient
         };
     }
 
+    private void UpdateAdaptiveBatchSize(double latencyMs)
+    {
+        lock (_adaptiveLock)
+        {
+            // Update EMA: seed on first measurement, smooth thereafter
+            _flushLatencyEma = _flushLatencyEma == 0.0
+                ? latencyMs
+                : EmaAlpha * latencyMs + (1.0 - EmaAlpha) * _flushLatencyEma;
+
+            var ceiling = _options.MaxFlushOverheadMs;
+
+            if (_flushLatencyEma < ceiling * 0.5)
+            {
+                // Latency well below ceiling — increase batch size by 20%
+                _currentBatchSize = Math.Min(MaxBatchSize, (int)(_currentBatchSize * 1.2));
+            }
+            else if (_flushLatencyEma > ceiling * 0.9)
+            {
+                // Latency near ceiling — decrease batch size by 30%
+                _currentBatchSize = Math.Max(MinBatchSize, (int)(_currentBatchSize * 0.7));
+            }
+        }
+    }
+
     private void SafeOnError(Exception ex)
     {
         try { _options.OnError?.Invoke(ex); } catch { /* swallow */ }
@@ -429,4 +572,7 @@ public sealed partial class IncidentaryClient : IIncidentaryClient
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Incidentary capture mode changed to {Mode}")]
     private static partial void LogModeChanged(ILogger logger, string mode);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Backend requested capture mode: {RequestedMode}")]
+    private static partial void LogCaptureModeRequested(ILogger logger, string requestedMode);
 }

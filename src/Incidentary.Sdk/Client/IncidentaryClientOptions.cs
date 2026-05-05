@@ -39,6 +39,25 @@ public sealed class IncidentaryClientOptions
     /// <summary>Ring buffer capacity (number of events).</summary>
     public int BufferCapacity { get; set; } = 4_000;
 
+    // ─── Adaptive Batch Sizing ──────────────────────────────────────────
+
+    /// <summary>
+    /// Target overhead ceiling for flush latency in milliseconds.
+    /// The adaptive batch sizer uses this to decide whether to grow or shrink batches.
+    /// When EMA latency &lt; 50% of this value, batch size increases by 20%.
+    /// When EMA latency &gt; 90% of this value, batch size decreases by 30%.
+    /// </summary>
+    public int MaxFlushOverheadMs { get; set; } = 100;
+
+    // ─── L1 Trace Cap ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// Enables the L1 per-trace span cap (5K/50K/500K). Default: true.
+    /// Disable only for legitimate large-trace use cases (batch jobs,
+    /// internal benchmarks). See docs/specs/l1-trace-cap.md.
+    /// </summary>
+    public bool TraceCapEnabled { get; set; } = true;
+
     // ─── Pre-arm: Error Rate (5xx) ──────────────────────────────────────
 
     /// <summary>5xx error rate percentage to enter PRE_ARMED.</summary>
